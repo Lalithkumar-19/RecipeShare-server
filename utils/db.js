@@ -30,8 +30,10 @@ db.serialize(() => {
           name TEXT NOT NULL,
           profile_pic TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          recipes_created INTEGER  DEFAULT 0,
-          fav_recipes TEXT
+          recipes_created_cnt INTEGER  DEFAULT 0,
+          fav_recipes_cnt INTEGER  DEFAULT 0,
+          list_recipes TEXT,
+          fav_recipes TEXT 
          )
         `);
   db.run(
