@@ -34,7 +34,7 @@ db.serialize(() => {
           fav_recipes_cnt INTEGER  DEFAULT 0,
           list_recipes TEXT,
           fav_recipes TEXT 
-         )
+        )
         `);
   db.run(
     `CREATE TABLE IF NOT EXISTS comments(

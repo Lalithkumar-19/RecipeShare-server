@@ -1,6 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const nodemailer = require("nodemailer");
+const cookieParser =require("cookie-parser");
+const bodyParser = require("body-parser");
 dotenv.config();
 const db = require("./utils/db");
 const { OAuth2Client } = require("google-auth-library");
@@ -13,9 +16,15 @@ const multer = require("multer");
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+const corsOptions={
+  origin: "http://localhost:5173",
+  credentials: true,
+};
 
 app.use(express.json());
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(bodyParser.json());
+app.use(cookieParser());
+app.use(cors(corsOptions));
 
 const JWT_SECRET = process.env.SECRET_KEY;
 
@@ -26,70 +35,236 @@ const googleClient = new OAuth2Client(
 
 // Routes
 
-// Normal login (email/password)
-app.post("/api/login", (req, res) => {
-  const { email, password } = req.body;
-
-  db.get("SELECT * FROM users WHERE email = ?", [email], async (err, user) => {
-    if (err) return res.status(500).json({ message: "Database error" });
-
-    if (!user || !user.password) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const isPasswordCorrect = await bcrypt.compare(password, user.password);
-    if (!isPasswordCorrect) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    // Generate JWT token
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-      expiresIn: "1h",
-    });
-
-    res.status(200).json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        profile_pic: user.profile_pic,
-        recipes_created: user.recipes_created_cnt,
-        fav_recipes_cnt: user.fav_recipes_cnt,
-      },
-    });
-  });
-});
-
 // Normal signup (email/password)
 app.post("/api/signup", async (req, res) => {
   const { email, password, name } = req.body;
 
-  const hashedPassword = await bcrypt.hash(password, 10);
+  if (!email || !password || !name) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
 
-  db.run(
-    "INSERT INTO users (email, password, name) VALUES (?, ?, ?)",
-    [email, hashedPassword, name],
-    function (err) {
-      if (err) {
-        if (err.code === "SQLITE_CONSTRAINT") {
-          return res.status(400).json({ message: "Email already exists" });
+  try {
+    const dbUser = await new Promise((resolve, reject) => {
+      db.get("SELECT * FROM users WHERE email = ?", [email], (err, row) => {
+        if (err) reject(err);
+        resolve(row); 
+      });
+    });
+
+    if (dbUser) {
+      return res.status(400).json({ message: "User already exists!" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        "INSERT INTO users (email, password, name) VALUES (?, ?, ?)",
+        [email, hashedPassword, name],
+        function (err) {
+          if (err) reject(err);
+          resolve(this.lastID); 
         }
-        return res.status(500).json({ message: "Database error" });
+      );
+    });
+
+    res.status(201).json("User created successfully!");
+
+  } catch (error) {
+    console.error("Signup error:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// Normal login (email/password)
+app.post("/api/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
+  }
+
+  try {
+    
+    const user = await new Promise((resolve, reject) => {
+      db.get("SELECT * FROM users WHERE email = ?", [email], (err, row) => {
+        if (err) reject(err);
+        resolve(row); 
+      });
+    });
+
+    if (!user || !user.password) {
+      return res.status(401).json({ message: "Invalid User" });
+    }
+
+    
+    const isPasswordCorrect = await bcrypt.compare(password, user.password);
+    if (!isPasswordCorrect) {
+      return res.status(401).json({ message: "Invalid Password" });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+    console.log(token);
+    res.cookie("access_token",token,{
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production"
+  }).status(200).json("User logged in");
+
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+
+// logout user ()
+app.post("/api/logout", async (req, res ) => {
+  try {
+    res.clearCookie("access_token",{
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production"
+    }).status(200).json({message:"Logged out successfully"});
+  } catch (error) {
+    console.log("Error in logout controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+
+app.post('/api/forget', async (req, res) => {
+  try {
+    const { email } = req.body;
+    console.log(email);
+    const user = await new Promise((resolve, reject) => {
+      db.get("SELECT * FROM users WHERE email = ?", [email], (err, row) => {
+        if (err) reject(err);
+        resolve(row); // row is undefined if no user exists
+      });
+    });
+
+    if (!user) {
+      next(new Error("User Not Found"));
+    }
+    else {
+
+
+      const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '5m' });
+
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: 'basavojuganesh@gmail.com',
+          pass: process.env.EMAIL_APPCODE
+        }
+      });
+
+      const mailOptions = {
+        from: 'basavojuganesh@gmail.com',
+        to: email,
+        subject: 'Forget Password',
+        text: 'Your Password reset link is provided here and \n it will work only for 5 minuetes\n' + token
+      };
+
+      await transporter.sendMail(mailOptions, function (error, info) {
+        if (error) {
+          console.log(error);
+        } else {
+          console.log('Email sent: ' + info.response);
+        }
+      });
+      console.log(token);
+      res.status(200).send("Successfully link sent to email");
+
+    }
+  }
+  catch (err) {
+
+    next(err);
+
+  }
+});
+
+
+app.post('/api/forget/verify', async (req, res, next) => {
+  try {
+
+    const token = req.body.token;
+    await jwt.verify(token, JWT_SECRET, (err, decode) => {
+
+      if (err) {
+        next(err);
+      }
+      else {
+        res.json({ verified: true, email: decode.email });
+        console.log(decode);
+
       }
 
-      res.status(201).json({
-        name,
-      });
-    }
-  );
+    })
+  }
+  catch (err) {
+
+    next(err);
+
+  }
+
 });
+
+
+app.post('/api/passchange', async (req, res, next) => {
+  console.log(req.body);
+  const { token, password } = req.body;
+
+  try {
+    // Verify the JWT token
+    const decoded = jwt.verify(token, JWT_SECRET); // No await needed here
+
+    const email = decoded.email;
+    const hashpassword = await bcrypt.hash(password, 10);
+    console.log(hashpassword);
+
+    // Update user password
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        "UPDATE users SET password = ? WHERE email = ?",
+        [hashpassword, email], // Corrected variable name
+        function (err) {
+          if (err) reject(err);
+          resolve(this.changes); // `this.changes` shows affected rows
+        }
+      );
+    });
+
+    // Check if any row was updated
+    if (result === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({ message: "Password changed successfully" });
+  } catch (err) {
+    console.error("Password change error:", err);
+    
+    if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    next(err);
+  }
+});
+
+
+
 
 // Google login
 app.post("/api/google-login", async (req, res) => {
   const { token } = req.body;
 
   try {
+    // Verify Google Token
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
       audience:
@@ -100,73 +275,71 @@ app.post("/api/google-login", async (req, res) => {
     const { sub: googleId, email, name, picture } = payload;
 
     // Check if user exists
-    db.get(
-      "SELECT * FROM users WHERE google_id = ? OR email = ?",
-      [googleId, email],
-      (err, user) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-
-        if (user) {
-          // User exists, generate JWT
-          console.log("user is", user);
-          const token = jwt.sign(
-            { id: user.id, email: user.email },
-            JWT_SECRET,
-            {
-              expiresIn: "1h",
-            }
-          );
-          return res.status(200).json({
-            token,
-            user: {
-              id: user.id,
-              email: user.email,
-              name: user.name,
-              fav_recipes: user.fav_recipes ? JSON.parse(user.fav_recipes) : [],
-              list_recipes: user.list_recipes
-                ? JSON.parse(user.list_recipes)
-                : [],
-              profile_pic: user.profile_pic,
-              recipes_created: user.recipes_created_cnt,
-              fav_recipes_cnt: user.fav_recipes_cnt,
-            },
-          });
-        } else {
-          // New user
-          db.run(
-            "INSERT INTO users (google_id, email, name, profile_pic) VALUES (?, ?, ?, ?)",
-            [googleId, email, name, picture],
-            function (err) {
-              if (err)
-                return res.status(500).json({ message: "Database error" });
-
-              const token = jwt.sign({ id: this.lastID, email }, JWT_SECRET, {
-                expiresIn: "1h",
-              });
-
-              res.status(201).json({
-                token,
-                user: {
-                  id: user.id,
-                  email: user.email,
-                  name: user.name,
-                  profile_pic: user.profile_pic,
-                  recipes_created: user.recipes_created_cnt,
-                  fav_recipes: user.fav_recipes
-                    ? JSON.parse(user.fav_recipes)
-                    : [],
-                  list_recipes: user.list_recipes
-                    ? JSON.parse(user.list_recipes)
-                    : [],
-                  fav_recipes_cnt: user.fav_recipes_cnt,
-                },
-              });
-            }
-          );
+    const user = await new Promise((resolve, reject) => {
+      db.get(
+        "SELECT * FROM users WHERE google_id = ? OR email = ?",
+        [googleId, email],
+        (err, row) => {
+          if (err) reject(err);
+          resolve(row); // If no user, row will be undefined
         }
-      }
-    );
+      );
+    });
+
+    if (user) {
+      // Existing user → Generate JWT
+      console.log("User found:", user);
+      const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
+        expiresIn: "1h",
+      });
+
+      return res.status(200).json({
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          fav_recipes: user.fav_recipes ? JSON.parse(user.fav_recipes) : [],
+          list_recipes: user.list_recipes ? JSON.parse(user.list_recipes) : [],
+          profile_pic: user.profile_pic,
+          recipes_created: user.recipes_created_cnt || 0,
+          fav_recipes_cnt: user.fav_recipes_cnt || 0,
+        },
+      });
+    }
+
+    // New user → Insert into database
+    const newUserId = await new Promise((resolve, reject) => {
+      db.run(
+        "INSERT INTO users (google_id, email, name, profile_pic) VALUES (?, ?, ?, ?)",
+        [googleId, email, name, picture],
+        function (err) {
+          if (err) reject(err);
+          resolve(this.lastID); // Get the last inserted user ID
+        }
+      );
+    });
+
+    // Generate JWT for new user
+    const newToken = jwt.sign({ id: newUserId, email }, JWT_SECRET, {
+      expiresIn: "1h",
+    });
+
+    res.status(201).json({
+      token: newToken,
+      user: {
+        id: newUserId,
+        email,
+        name,
+        profile_pic: picture,
+        recipes_created: 0,
+        fav_recipes: [],
+        list_recipes: [],
+        fav_recipes_cnt: 0,
+      },
+    });
   } catch (error) {
+    console.error("Google Login Error:", error);
     res.status(401).json({ message: "Invalid Google token" });
   }
 });
