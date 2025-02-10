@@ -10,7 +10,8 @@ const { Uploadmiddleware } = require("./middlewares/Imageuploader");
 const app = express();
 const PORT = 5000;
 const multer = require("multer");
-
+const nodemailer = require("nodemailer");
+const { UserAuth } = require("./middlewares/UserAuth");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
@@ -46,6 +47,19 @@ app.post("/api/login", (req, res) => {
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
       expiresIn: "1h",
     });
+    // console.log({
+    //   token,
+    //   user: {
+    //     id: user.id,
+    //     email: user.email,
+    //     name: user.name,
+    //     fav_recipes: user.fav_recipes ? JSON.parse(user.fav_recipes) : [],
+    //     list_recipes: user.list_recipes ? JSON.parse(user.list_recipes) : [],
+    //     profile_pic: user.profile_pic,
+    //     recipes_created: user.recipes_created_cnt,
+    //     fav_recipes_cnt: user.fav_recipes_cnt,
+    //   },
+    // });
 
     res.status(200).json({
       token,
@@ -53,6 +67,8 @@ app.post("/api/login", (req, res) => {
         id: user.id,
         email: user.email,
         name: user.name,
+        fav_recipes: user.fav_recipes ? JSON.parse(user.fav_recipes) : [],
+        list_recipes: user.list_recipes ? JSON.parse(user.list_recipes) : [],
         profile_pic: user.profile_pic,
         recipes_created: user.recipes_created_cnt,
         fav_recipes_cnt: user.fav_recipes_cnt,
@@ -63,6 +79,7 @@ app.post("/api/login", (req, res) => {
 
 // Normal signup (email/password)
 app.post("/api/signup", async (req, res) => {
+  console.log("sign up routee", req.body);
   const { email, password, name } = req.body;
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -72,18 +89,20 @@ app.post("/api/signup", async (req, res) => {
     [email, hashedPassword, name],
     function (err) {
       if (err) {
+        console.log(err);
         if (err.code === "SQLITE_CONSTRAINT") {
           return res.status(400).json({ message: "Email already exists" });
         }
         return res.status(500).json({ message: "Database error" });
       }
-
-      res.status(201).json({
+      return res.status(201).json({
         name,
       });
     }
   );
 });
+
+// Generate 6-digit OTP
 
 // Google login
 app.post("/api/google-login", async (req, res) => {
@@ -113,7 +132,7 @@ app.post("/api/google-login", async (req, res) => {
             { id: user.id, email: user.email },
             JWT_SECRET,
             {
-              expiresIn: "1h",
+              expiresIn: "24h",
             }
           );
           return res.status(200).json({
@@ -141,7 +160,7 @@ app.post("/api/google-login", async (req, res) => {
                 return res.status(500).json({ message: "Database error" });
 
               const token = jwt.sign({ id: this.lastID, email }, JWT_SECRET, {
-                expiresIn: "1h",
+                expiresIn: "24h",
               });
 
               res.status(201).json({
@@ -171,16 +190,197 @@ app.post("/api/google-login", async (req, res) => {
   }
 });
 
+//forgot password and verification
+app.post("/api/forgot-password", (req, res) => {
+  const { email } = req.body;
+  console.log(email, "lalith");
+  if (!email) return res.status(400).json({ error: "Email is required" });
+
+  db.get(
+    "SELECT * FROM users WHERE email =?",
+    [email],
+    (err, user) => {
+      if (err) return res.status(500).json({ error: "Database error" });
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      // Generate OTP
+      const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min expiry
+      console.log(otp, "otp");
+      // Store OTP in DB
+      db.run(
+        "INSERT OR REPLACE INTO otps (email, otp, expires_at) VALUES (?, ?, ?)",
+        [email, otp, expiresAt],
+        (err) => {
+          console.log(err);
+          if (err) return res.status(500).json({ error: "Database error" });
+
+          // Send OTP Email
+
+          const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+              user: "basavojuganesh@gmail.com",
+              pass: process.env.EMAIL_APPCODE,
+            },
+          });
+
+          const mailOptions = {
+            from: "basavojuganesh@gmail.com",
+            to: email,
+            subject: "Forget Password From Recipe-share",
+            text:
+              "Your Password Reset OTP provided here and \n it will work only for 5 minuetes\n" +
+              otp,
+          };
+
+          transporter.sendMail(mailOptions, (err) => {
+            if (err)
+              return res.status(500).json({ error: "Email sending failed" });
+            res.status(200).json({ message: "OTP sent to email" });
+          });
+        }
+      );
+    }
+  );
+});
+
+app.post("/api/reset-password", async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+  if (!email || !otp || !newPassword)
+    return res.status(400).json({ error: "All fields are required" });
+
+  db.get(
+    "SELECT * FROM otps WHERE email = ? AND otp = ?",
+    [email, otp],
+    (err, otpEntry) => {
+      if (err) return res.status(500).json({ error: "Database error" });
+      if (!otpEntry) return res.status(400).json({ error: "Invalid OTP" });
+
+      if (new Date(otpEntry.expires_at) < new Date()) {
+        return res.status(400).json({ error: "OTP expired" });
+      }
+
+      // Hash new password
+      bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+        if (err)
+          return res.status(500).json({ error: "Error hashing password" });
+
+        // Update password in DB
+        db.run(
+          "UPDATE users SET password = ? WHERE email = ?",
+          [hashedPassword, email],
+          (err) => {
+            if (err) return res.status(500).json({ error: "Database error" });
+
+            // Delete OTP after use
+            db.run("DELETE FROM otps WHERE email = ?", [email], (err) => {
+              if (err)
+                return res.status(500).json({ error: "Error deleting OTP" });
+
+              res.status(200).json({ message: "Password reset successful" });
+            });
+          }
+        );
+      });
+    }
+  );
+});
+
 app.get("/api/recipes", async (req, res) => {
-  await db.all("SELECT * FROM recipes", [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    if (!rows) {
-      return res.status(404).json("NO recipees founded");
-    }
-    return res.status(200).json(rows);
-  });
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 3;
+    const offset = (page - 1) * limit;
+
+    // Get paginated recipes
+    const recipes = await new Promise((resolve, reject) => {
+      db.all(
+        "SELECT * FROM recipes LIMIT ? OFFSET ?",
+        [limit, offset],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows);
+        }
+      );
+    });
+
+    // Get total count of recipes
+    const totalRecipes = await new Promise((resolve, reject) => {
+      db.get("SELECT COUNT(*) as cnt FROM recipes", [], (err, row) => {
+        if (err) return reject(err);
+        resolve(row.cnt);
+      });
+    });
+    // console.log({
+    //   data: recipes,
+    //   cnt: totalRecipes,
+    // });
+
+    // Return the response
+    return res.status(200).json({
+      data: recipes,
+      cnt: totalRecipes,
+    });
+  } catch (error) {
+    console.error("Database error:", error.message);
+    return res.status(500).json({ error: "Internal server error occurred" });
+  }
+});
+
+app.get("/api/getFiltered", async (req, res) => {
+  // console.log(req.query, "req");
+  const { query, page = 1, limit = 10 } = req.query;
+  const offset = (page - 1) * limit;
+  if (!query) {
+    return res.status(400).json({ erorr: "Query param is required" });
+  }
+  const searchQuery = `%${query}%`;
+
+  const getCount = () => {
+    return new Promise((resolve, reject) => {
+      db.get(
+        `SELECT COUNT(*) as total FROM recipes WHERE title LIKE ?`,
+        [searchQuery],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row.total);
+        }
+      );
+    });
+  };
+
+  const getRecipes = () => {
+    return new Promise((resolve, reject) => {
+      db.all(
+        `SELECT * FROM recipes WHERE title LIKE ? LIMIT ? OFFSET ?`,
+        [searchQuery, limit, offset],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        }
+      );
+    });
+  };
+
+  Promise.all([getCount(), getRecipes()])
+    .then(([totalRecipes, recipes]) => {
+      // console.log({
+      //   recipes,
+      //   totalRecipes,
+      //   currentPage: Number(page),
+      //   totalPages: Math.ceil(totalRecipes / limit),
+      // });
+      res.status(200).json({
+        recipes,
+        totalRecipes,
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalRecipes / limit),
+      });
+    })
+    .catch((error) => {
+      res.status(500).json({ error: "Database error", details: error.message });
+    });
 });
 
 app.get("/api/recipes/:id", async (req, res) => {
@@ -295,11 +495,8 @@ app.get("/api/recipes/:id/comments", async (req, res) => {
 });
 
 app.get("/api/getFavRecipes", async (req, res) => {
-  console.log("added /...");
   try {
     const userId = req.query.userId;
-    console.log("added /...");
-
     if (!userId) {
       return res.status(400).json({ msg: "User ID is required" });
     }
@@ -341,7 +538,7 @@ app.get("/api/getFavRecipes", async (req, res) => {
 
 app.post("/api/saveRecipe", async (req, res) => {
   try {
-    console.log("entered into save route");
+    // console.log("entered into save route");
     const userId = req.query.userId;
     if (!userId) {
       return res.status(400).json({ msg: "User ID is required" });
@@ -364,7 +561,13 @@ app.post("/api/saveRecipe", async (req, res) => {
           favouriteRecipes = [];
         }
       }
-      favouriteRecipes.push(recipeId);
+      if (favouriteRecipes.length == 0) {
+        favouriteRecipes.push(recipeId);
+      } else {
+        if (!favouriteRecipes.includes(recipeId)) {
+          favouriteRecipes.push(recipeId);
+        }
+      }
       const query =
         "UPDATE users SET fav_recipes=?,fav_recipes_cnt=? WHERE id=?";
       await db.run(
@@ -374,7 +577,7 @@ app.post("/api/saveRecipe", async (req, res) => {
           if (err) {
             return res.status(500).json({ error: err.message });
           }
-          console.log(favouriteRecipes, "Added");
+          // console.log(favouriteRecipes, "Added");
           res.status(200).json({
             msg: "Recipe saved successfully",
             data: favouriteRecipes,
@@ -422,7 +625,7 @@ app.put("/api/removeFromSaved", async (req, res) => {
           if (err) {
             return res.status(500).json({ error: err.message });
           }
-          console.log(favouriteRecipes, "Added");
+          // console.log(favouriteRecipes, "Added");
           res.status(200).json({
             msg: "Recipe unsaved successfully",
             data: newrecipes,
@@ -432,6 +635,78 @@ app.put("/api/removeFromSaved", async (req, res) => {
       );
     });
   } catch (error) {
+    res.status(500).json({ msg: "An error occurred", error });
+  }
+});
+
+app.delete("/api/deleteRecipe",UserAuth,async (req, res) => {
+  console.log("delete api called");
+  try {
+    const userId = req.user.id;
+    const recipeId = req.query.id;
+    if (!userId || !recipeId)
+      res.status(401).json("user id or recipe not given");
+
+    const query = `SELECT * FROM users WHERE id=?`;
+    await db.all(query, [userId], async (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!row) {
+        return res.status(404).json({ msg: "User not found" });
+      }
+      let favouriteRecipes = [];
+      try {
+        favouriteRecipes = JSON.parse(row.fav_recipes) || [];
+      } catch {
+        favouriteRecipes = [];
+      }
+      let newRecipes = favouriteRecipes.filter((recipe) => recipe != recipeId);
+      await db.run(
+        "UPDATE users SET list_recipes=? WHERE id=?",
+        [JSON.stringify(newRecipes), userId],
+        (err) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.status(200).json({
+            msg: "Favourite recipes retrieved successfully",
+            cnt: newRecipes.length,
+          });
+        }
+      );
+    });
+  } catch (error) {
+    res.status(500).json({ msg: "An error occurred", error });
+  }
+});
+
+app.get("/api/getFavRecipeslist", async (req, res) => {
+
+  try {
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.status(400).json({ msg: "User ID is required" });
+    }
+    const query = `SELECT  fav_recipes FROM users WHERE id=?`;
+    await db.get(query, [userId], async (err, row) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (!row) {
+        return res.status(404).json({ msg: "User not found" });
+      }
+      let favouriteRecipes = [];
+      try {
+        favouriteRecipes = JSON.parse(row.fav_recipes) || [];
+      } catch {
+        favouriteRecipes = [];
+      }
+
+      res.status(200).json({
+        msg: "Favourite recipes retrieved successfully",
+        data: favouriteRecipes,
+        cnt: favouriteRecipes.length,
+      });
+    });
+  } catch (error) {
+    console.log(error);
     res.status(500).json({ msg: "An error occurred", error });
   }
 });
@@ -452,7 +727,7 @@ app.get("/api/getpostedRecipes", async (req, res) => {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-
+       
       if (!row || !row.list_recipes) {
         return res.status(404).json({ msg: "No recipes found for this user" });
       }
@@ -461,7 +736,8 @@ app.get("/api/getpostedRecipes", async (req, res) => {
 
       const placeholders = postedRecipesId.map(() => "?").join(",");
       const recipeQuery = `SELECT * FROM recipes WHERE id IN (${placeholders}) LIMIT ? OFFSET ?`;
-
+      const{cnt}=await db.all(`SELECT COUNT(*) as cnt FROM recipes WHERE id IN (${placeholders})`);
+        
       await db.all(
         recipeQuery,
         [...postedRecipesId, limit, offset],
@@ -469,8 +745,11 @@ app.get("/api/getpostedRecipes", async (req, res) => {
           if (err) {
             return res.status(500).json({ error: err.message });
           }
-          console.log("recipes", recipes);
-          res.status(200).json(recipes);
+          // console.log("recipes", recipes);
+          res.status(200).json({
+            data:recipes,
+            cnt:cnt
+          });
         }
       );
     });

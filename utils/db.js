@@ -47,6 +47,14 @@ db.serialize(() => {
         FOREIGN KEY (author) REFERENCES users(id)
         )`
   );
+  db.run(
+    `CREATE TABLE IF NOT EXISTS otps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    otp TEXT NOT NULL,
+    expires_at DATETIME NOT NULL
+     );`
+  );
 });
 
 module.exports = db;
