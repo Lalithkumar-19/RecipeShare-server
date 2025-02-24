@@ -3,36 +3,34 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 
 dotenv.config();
-const PORT = process.env.PORT || 5000; // Ensure PORT is always defined
+const PORT = process.env.PORT || 5000;
 
 const app = express();
 
-// CORS Configuration
+// Allow all origins (CORS policy)
 app.use(cors({
-    origin: "https://recipe-share-frontend-ten.vercel.app", // Allow frontend
-    credentials: true, // Allow cookies & authentication headers
+    origin: "https://recipe-share-frontend-ten.vercel.app",
+    credentials: true,
     methods: "GET,POST,PUT,DELETE",
     allowedHeaders: "Content-Type,Authorization"
 }));
 
-// Security Headers to fix COOP issue
+app.use(express.json());
+
+// Ensure Google login route handles CORS properly
 app.use((req, res, next) => {
-    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
-    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-    res.setHeader("Access-Control-Allow-Origin", "https://recipe-share-frontend-ten.vercel.app");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    
+    res.header("Access-Control-Allow-Origin", "https://recipe-share-frontend-ten.vercel.app");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Credentials", "true");
+
+    // Handle preflight requests
     if (req.method === "OPTIONS") {
-        return res.sendStatus(204); // Handle preflight requests
+        return res.sendStatus(200);
     }
     
     next();
 });
-
-// Middleware
-app.use(express.json());
 
 // Routes
 const LoginRouter = require("./Routes/LoginRoutes");
@@ -43,13 +41,7 @@ app.use("/api", LoginRouter);
 app.use("/api", RecipeRouter);
 app.use("/api", UserRoutes);
 
-// Global Error Handling Middleware
-app.use((err, req, res, next) => {
-    console.error("Server Error:", err.message);
-    res.status(500).json({ error: "Internal Server Error" });
-});
-
-// Start Server
+// Start server
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
