@@ -5,8 +5,7 @@ const PORT = process.env.PORT||5000;
 dotenv.config();
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: 
-  "https://recipe-share-frontend-ten.vercel.app" }));
+app.use(cors({ origin:'*' }));
 const LoginRouter = require("./Routes/LoginRoutes");
 const RecipeRouter = require("./Routes/RecipeRoutes");
 const UserRoutes = require("./Routes/UserRoutes");
