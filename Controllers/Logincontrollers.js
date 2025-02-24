@@ -70,7 +70,7 @@ const SignUp_Controler=async (req, res) => {
 };
 
 
-const Login_With_Google=async (req, res) => {
+const Login_With_Google = async (req, res) => {
   const { token } = req.body;
 
   try {
@@ -92,13 +92,11 @@ const Login_With_Google=async (req, res) => {
 
         if (user) {
           // User exists, generate JWT
-          console.log("user is", user);
+          console.log("User found:", user);
           const token = jwt.sign(
             { id: user.id, email: user.email },
             JWT_SECRET,
-            {
-              expiresIn: "24h",
-            }
+            { expiresIn: "24h" }
           );
           return res.status(200).json({
             token,
@@ -116,31 +114,33 @@ const Login_With_Google=async (req, res) => {
             },
           });
         } else {
-          // New user
+          // New user registration
           db.run(
             "INSERT INTO users (google_id, email, name, profile_pic) VALUES (?, ?, ?, ?)",
             [googleId, email, name, picture],
             function (err) {
-              if (err)
+              if (err) {
                 return res.status(500).json({ message: "Database error" });
+              }
 
-              const token = jwt.sign({ id: this.lastID, email }, JWT_SECRET);
+              const newUserId = this.lastID; // Get inserted user ID
+              const token = jwt.sign(
+                { id: newUserId, email },
+                JWT_SECRET,
+                { expiresIn: "24h" }
+              );
 
               res.status(201).json({
                 token,
                 user: {
-                  id: user.id,
-                  email: user.email,
-                  name: user.name,
-                  profile_pic: user.profile_pic,
-                  recipes_created: user.recipes_created_cnt,
-                  fav_recipes: user.fav_recipes
-                    ? JSON.parse(user.fav_recipes)
-                    : [],
-                  list_recipes: user.list_recipes
-                    ? JSON.parse(user.list_recipes)
-                    : [],
-                  fav_recipes_cnt: user.fav_recipes_cnt,
+                  id: newUserId,
+                  email,
+                  name,
+                  profile_pic: picture,
+                  recipes_created: 0,
+                  fav_recipes: [],
+                  list_recipes: [],
+                  fav_recipes_cnt: 0,
                 },
               });
             }
@@ -149,6 +149,7 @@ const Login_With_Google=async (req, res) => {
       }
     );
   } catch (error) {
+    console.error("Google login error:", error);
     res.status(401).json({ message: "Invalid Google token" });
   }
 };
