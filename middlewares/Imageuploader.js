@@ -1,7 +1,7 @@
 const axios = require("axios");
 const FormData = require("form-data");
 
-const api_key = "ae1df12d41c58320dc92663fa75d1037";
+const api_key = "5f360379e0a50d1c0427139c4958f9f8";
 
 
 const Uploadmiddleware = async (req, res, next) => {
