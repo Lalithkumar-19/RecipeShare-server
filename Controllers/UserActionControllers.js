@@ -342,11 +342,6 @@ const Get_PostedRecipes_Controller=async (req, res) => {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-
-      if (!row || !row.list_recipes) {
-        return res.status(404).json({ msg: "No recipes found for this user" });
-      }
-
       const postedRecipesId = JSON.parse(row.list_recipes);
 
       const placeholders = postedRecipesId.map(() => "?").join(",");
