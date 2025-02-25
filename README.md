@@ -43,14 +43,8 @@ Create a `.env` file in the root directory and add the following:
 PORT=5000
 DATABASE_URL=sqlite3
 JWT_SECRET=your_secret_key
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-EMAIL_SERVICE=your_email_service
-EMAIL_USER=your_email@example.com
-EMAIL_PASS=your_email_password
 ```
 
 ### Run the Server
