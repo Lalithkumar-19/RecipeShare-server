@@ -326,7 +326,49 @@ const Get_FavRecipes_List_Controller=async (req, res) => {
 };
 
 
-const Get_PostedRecipes_Controller=async (req, res) => {
+// const Get_PostedRecipes_Controller=async (req, res) => {
+//   try {
+//     const userId = req.header("userid");
+
+//     if (!userId) {
+//       return res.status(400).json({ msg: "User ID is required" });
+//     }
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 5;
+//     const offset = (page - 1) * limit;
+
+//     const query = "SELECT list_recipes FROM users WHERE id = ?";
+//     await db.get(query, [userId], async (err, row) => {
+//       if (err) {
+//         return res.status(500).json({ error: err.message });
+//       }
+//       const postedRecipesId = JSON.parse(row.list_recipes);
+
+//       const placeholders = postedRecipesId.map(() => "?").join(",");
+//       const recipeQuery = `SELECT * FROM recipes WHERE id IN (${placeholders}) LIMIT ? OFFSET ?`;
+//       const { cnt } = await db.all(`SELECT COUNT(*) as cnt FROM recipes WHERE id IN (${placeholders})`);
+
+//       await db.all(
+//         recipeQuery,
+//         [...postedRecipesId, limit, offset],
+//         (err, recipes) => {
+//           if (err) {
+//             return res.status(500).json({ error: err.message });
+//           }
+//           // console.log("recipes", recipes);
+//           res.status(200).json({
+//             data: recipes,
+//             cnt: cnt
+//           });
+//         }
+//       );
+//     });
+//   } catch (error) {
+//     res.status(500).json({ msg: "An error occurred", error });
+//   }
+// };
+
+const Get_PostedRecipes_Controller = async (req, res) => {
   try {
     const userId = req.header("userid");
 
@@ -342,26 +384,35 @@ const Get_PostedRecipes_Controller=async (req, res) => {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-      const postedRecipesId = JSON.parse(row.list_recipes);
+      
+      if (!row || !row.list_recipes) { // Fix: Check if row exists
+        return res.status(404).json({ msg: "No recipes found for this user" });
+      }
+
+      const postedRecipesId = JSON.parse(row.list_recipes) || [];
+      if (postedRecipesId.length === 0) {
+        return res.status(200).json({ data: [], cnt: 0 });
+      }
 
       const placeholders = postedRecipesId.map(() => "?").join(",");
       const recipeQuery = `SELECT * FROM recipes WHERE id IN (${placeholders}) LIMIT ? OFFSET ?`;
-      const { cnt } = await db.all(`SELECT COUNT(*) as cnt FROM recipes WHERE id IN (${placeholders})`);
+      const countQuery = `SELECT COUNT(*) as cnt FROM recipes WHERE id IN (${placeholders})`;
 
-      await db.all(
-        recipeQuery,
-        [...postedRecipesId, limit, offset],
-        (err, recipes) => {
+      db.all(countQuery, postedRecipesId, (err, countResult) => {
+        if (err) {
+          return res.status(500).json({ error: err.message });
+        }
+
+        db.all(recipeQuery, [...postedRecipesId, limit, offset], (err, recipes) => {
           if (err) {
             return res.status(500).json({ error: err.message });
           }
-          // console.log("recipes", recipes);
           res.status(200).json({
             data: recipes,
-            cnt: cnt
+            cnt: countResult[0]?.cnt || 0, 
           });
-        }
-      );
+        });
+      });
     });
   } catch (error) {
     res.status(500).json({ msg: "An error occurred", error });
