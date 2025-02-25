@@ -1,33 +1,29 @@
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
+const fs = require("fs");
 
-const dbpath = path.join(__dirname, "recipee.db");
-const db = new sqlite3.Database(dbpath, (err) => {
+// ✅ Store DB in a persistent directory instead of project folder
+const dbDirectory = path.join(process.cwd(), "data");
+const dbPath = path.join(dbDirectory, "recipee.db");
+
+// ✅ Ensure the directory exists
+if (!fs.existsSync(dbDirectory)) {
+  fs.mkdirSync(dbDirectory, { recursive: true });
+}
+
+console.log("Using database file at:", dbPath);
+
+// ✅ Connect to SQLite database
+const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
-    console.log("Database connection failed", err.message);
+    console.error("Database connection failed:", err.message);
   } else {
-    console.log("Connected to the SQLite database");
+    console.log("Connected to SQLite database ✅");
   }
 });
 
+// ✅ Ensure tables are created
 db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS recipes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      rating TEXT DEFAULT 4.3,
-      ingredients TEXT NOT NULL,
-      instructions TEXT NOT NULL,
-      image TEXT NOT NULL,
-      prep_time TEXT NOT NULL,
-      comments TEXT DEFAULT '[]',
-      author_id INTEGER NOT NULL,
-      ratings TEXT DEFAULT '[]',
-      FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
-
-
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,6 +37,22 @@ db.serialize(() => {
       fav_recipes_cnt INTEGER DEFAULT 0,
       list_recipes TEXT,
       fav_recipes TEXT
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS recipes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      rating TEXT DEFAULT 4.3,
+      ingredients TEXT NOT NULL,
+      instructions TEXT NOT NULL,
+      image TEXT NOT NULL,
+      prep_time TEXT NOT NULL,
+      comments TEXT DEFAULT '[]',
+      author_id INTEGER NOT NULL,
+      ratings TEXT DEFAULT '[]',
+      FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
 

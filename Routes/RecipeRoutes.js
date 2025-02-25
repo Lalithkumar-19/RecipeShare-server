@@ -9,7 +9,7 @@ const upload = multer({ storage: storage });
 
 const RecipeRouter=require("express").Router();
 
-RecipeRouter.get
+
 RecipeRouter.get("/recipes",Get_All_Recipes_Controller);
 
 RecipeRouter.get("/getFiltered",Get_Filtered_Recipes_Controller);

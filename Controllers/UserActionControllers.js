@@ -1,6 +1,4 @@
 const db = require("../utils/db");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 const { default: OpenAI } = require("openai");
 dotenv.config();
