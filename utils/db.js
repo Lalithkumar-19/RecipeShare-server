@@ -1,45 +1,16 @@
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
-const fs = require("fs");
 
-// ✅ Store DB in a persistent directory instead of project folder
-const dbDirectory = path.join(process.cwd(), "data");
-const dbPath = path.join(dbDirectory, "recipee.db");
-
-// ✅ Ensure the directory exists
-if (!fs.existsSync(dbDirectory)) {
-  fs.mkdirSync(dbDirectory, { recursive: true });
-}
-
-console.log("Using database file at:", dbPath);
-
-// ✅ Connect to SQLite database
-const db = new sqlite3.Database(dbPath, (err) => {
+const dbpath = path.join(__dirname, "recipee.db");
+const db = new sqlite3.Database(dbpath, (err) => {
   if (err) {
-    console.error("Database connection failed:", err.message);
+    console.log("Database connection failed", err.message);
   } else {
-    console.log("Connected to SQLite database ✅");
+    console.log("Connected to the SQLite database");
   }
 });
 
-// ✅ Ensure tables are created
 db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT,
-      google_id TEXT,
-      name TEXT NOT NULL,
-      profile_pic TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      recipes_created_cnt INTEGER DEFAULT 0,
-      fav_recipes_cnt INTEGER DEFAULT 0,
-      list_recipes TEXT,
-      fav_recipes TEXT
-    )
-  `);
-
   db.run(`
     CREATE TABLE IF NOT EXISTS recipes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,6 +24,23 @@ db.serialize(() => {
       author_id INTEGER NOT NULL,
       ratings TEXT DEFAULT '[]',
       FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT,
+      google_id TEXT,
+      name TEXT NOT NULL,
+      profile_pic TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      recipes_created_cnt INTEGER DEFAULT 0,
+      fav_recipes_cnt INTEGER DEFAULT 0,
+      list_recipes TEXT,
+      fav_recipes TEXT
     )
   `);
 

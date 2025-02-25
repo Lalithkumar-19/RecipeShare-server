@@ -7,10 +7,8 @@ const PORT = process.env.PORT || 5000;
 
 const app = express();
 
-// ✅ Apply CORS Middleware First
-app.use(cors()); // No need to specify options; it will allow all
+app.use(cors()); 
 
-// ✅ Manually Set Headers in Middleware
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*"); // Allow any origin
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -26,7 +24,6 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// ✅ Load Routes AFTER CORS Middleware
 const LoginRouter = require("./Routes/LoginRoutes");
 const RecipeRouter = require("./Routes/RecipeRoutes");
 const UserRoutes = require("./Routes/UserRoutes");
@@ -35,7 +32,7 @@ app.use("/api", LoginRouter);
 app.use("/api", RecipeRouter);
 app.use("/api", UserRoutes);
 
-// ✅ Start Server
+
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
