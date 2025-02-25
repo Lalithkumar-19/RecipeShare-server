@@ -4,7 +4,7 @@
   "description": "this is backend api for recipe sharing website",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon server.js"
+    "start": "node server.js"
   },
   "keywords": [
     "recipe",
