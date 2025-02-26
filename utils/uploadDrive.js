@@ -1,11 +1,11 @@
 const fs = require("fs");
 const path = require("path");
 const { google } = require("googleapis");
-
+require("dotenv").config();
 
 const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 const auth = new google.auth.GoogleAuth({
-  keyFile: path.join(__dirname, "../service-account.json"), 
+  credentials:JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
   scopes: SCOPES,
 });
 
@@ -72,7 +72,7 @@ async function downloadFile() {
     console.error("❌ Error downloading file:", error.message);
   }
 }
-uploadFile();
+
 
 
 module.exports = { uploadFile, downloadFile };
