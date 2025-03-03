@@ -11,6 +11,7 @@ const openai = new OpenAI({
 const Get_Fav_Recipes_Controller=async (req, res) => {
   try {
     const userId = req.query.userId;
+    
     if (!userId) {
       return res.status(400).json({ msg: "User ID is required" });
     }
